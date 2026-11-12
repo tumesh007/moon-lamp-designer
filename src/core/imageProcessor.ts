@@ -213,8 +213,8 @@ export function sampleGridIntensity(
 ): number {
   if (u < 0 || u > 1 || v < 0 || v > 1) return 0;
 
-  const x = u * (w - 1);
-  const y = v * (h - 1);
+  const x = Math.max(0, Math.min(w - 1, u * (w - 1)));
+  const y = Math.max(0, Math.min(h - 1, (1.0 - v) * (h - 1)));
 
   const x0 = Math.floor(x);
   const x1 = Math.min(w - 1, x0 + 1);

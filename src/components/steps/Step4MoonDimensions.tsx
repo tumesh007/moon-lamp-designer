@@ -191,6 +191,32 @@ export const Step4MoonDimensions: React.FC<Step4Props> = ({
             />
           </div>
         </div>
+
+        {/* Exterior Photo Sculpt Relief */}
+        <div className="pt-1 border-t border-space-800/80">
+          <div className="flex justify-between items-center text-xs text-slate-300 mb-1">
+            <span className="flex items-center gap-1.5 font-medium">
+              <Sparkles className="w-3.5 h-3.5 text-lunar-gold" /> Exterior Photo Sculpt Relief:
+            </span>
+            <span className="font-mono text-sm font-semibold text-lunar-gold">
+              {(moonDimensions.exteriorReliefDepth ?? 1.6).toFixed(1)} mm
+            </span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="2.5"
+            step="0.1"
+            value={moonDimensions.exteriorReliefDepth ?? 1.6}
+            onChange={(e) => onUpdateDimensions({ exteriorReliefDepth: Number(e.target.value) })}
+            className="w-full h-1.5 bg-space-800 rounded-lg appearance-none cursor-pointer accent-lunar-gold"
+          />
+          <div className="flex justify-between text-[10px] font-mono text-slate-500 mt-1">
+            <span>0.0 mm (Flat / Interior Only)</span>
+            <span>1.6 mm (Standard Sculpted)</span>
+            <span>2.5 mm (Deep 3D Profile)</span>
+          </div>
+        </div>
       </div>
 
       {/* Surface Topography Advanced Sliders */}

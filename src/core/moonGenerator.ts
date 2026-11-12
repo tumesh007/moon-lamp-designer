@@ -146,14 +146,19 @@ export function generateMoonGeometry(
       textureIntensity
     );
 
-    const effectiveCrater = craterElevation * (1.0 - photoResult.weight * 0.85);
+    // Dampen craters under photo so facial details remain crisp
+    const effectiveCrater = craterElevation * (1.0 - photoResult.weight * 0.88);
 
+    // Raised crater rim frame for photo_window style
     let frameRidge = 0;
     if (style === 'photo_window' && photoResult.frameDistance > 0 && photoResult.frameDistance < 0.18) {
       const rimT = photoResult.frameDistance / 0.18;
-      frameRidge = Math.sin(rimT * Math.PI) * 0.9;
+      frameRidge = Math.sin(rimT * Math.PI) * 1.2;
     }
 
+    // Lithophane thickness calculation:
+    // Bright highlights = thinnest (lithoMinThickness, e.g. 0.8mm)
+    // Dark shadows = thickest (lithoMaxThickness, e.g. 3.0mm)
     const targetLithoThickness =
       dimensions.lithoMinThickness +
       (1.0 - photoResult.intensity) * (dimensions.lithoMaxThickness - dimensions.lithoMinThickness);
@@ -165,8 +170,13 @@ export function generateMoonGeometry(
     minObservedThickness = Math.min(minObservedThickness, effectiveThickness);
     maxObservedThickness = Math.max(maxObservedThickness, effectiveThickness);
 
-    const tactileRelief = photoResult.weight * (photoResult.intensity - 0.5) * 0.4;
-    const outerR = radius + effectiveCrater + frameRidge + tactileRelief;
+    // Tactile exterior photo relief on outer surface:
+    // User configurable (default 1.6 mm). Gives the STL a distinct, sculpted 3D profile
+    // matching the preview in slicers (Bambu Studio / OrcaSlicer) and in real prints.
+    const reliefDepth = dimensions.exteriorReliefDepth ?? 1.6;
+    const exteriorRelief = photoResult.weight * (photoResult.intensity - 0.5) * reliefDepth;
+
+    const outerR = radius + effectiveCrater + frameRidge + exteriorRelief;
     const innerR = outerR - effectiveThickness;
 
     // Outer vertex
@@ -250,7 +260,7 @@ export function generateMoonGeometry(
     }
   }
 
-  // Inner Shell (Reversed winding):
+  // Inner Shell (Reversed winding for inward normals):
   for (let j = 0; j < lonSegments; j++) {
     const nextJ = (j + 1) % lonSegments;
     indices[triOffset++] = innerApexIdx;
@@ -325,6 +335,11 @@ interface PhotoMappingResult {
   v: number;
 }
 
+/**
+ * Spherical UV Projection & Lithophane Evaluation
+ * Upright V mapping: v=0 (bottom/south) to v=1 (top/north)
+ * Horizontal U mapping: u=0 (left/west) to u=1 (right/east)
+ */
 function evaluatePhotoMapping(
   nx: number,
   ny: number,
@@ -338,8 +353,11 @@ function evaluatePhotoMapping(
     return { weight: 0, intensity: 0.5, frameDistance: 0, u: 0.5, v: 0.5 };
   }
 
-  const cosAngle = Math.min(1.0, Math.max(-1.0, nz));
-  const angle = Math.acos(cosAngle);
+  // Spherical angular coordinates relative to front center (+Z)
+  const deltaPhi = Math.atan2(nx, nz); // horizontal angle: -PI to PI
+  const deltaTheta = Math.asin(Math.max(-1.0, Math.min(1.0, ny))); // vertical latitude: -PI/2 to PI/2
+  const cosAngle = Math.max(-1.0, Math.min(1.0, nz));
+  const angularDist = Math.acos(cosAngle);
 
   let weight = 0;
   let intensity = 0.5;
@@ -349,12 +367,13 @@ function evaluatePhotoMapping(
 
   switch (style) {
     case 'photo_window': {
+      // Circular framed window on front face
       const windowRadius = coverageRad * 0.45;
-      u = 0.5 + (nx / (Math.sin(windowRadius) * 2));
-      v = 0.5 - (ny / (Math.sin(windowRadius) * 2));
+      u = 0.5 + deltaPhi / (windowRadius * 2.0);
+      v = 0.5 + deltaTheta / (windowRadius * 2.0);
 
-      if (angle < windowRadius) {
-        const normDist = angle / windowRadius;
+      if (angularDist < windowRadius) {
+        const normDist = angularDist / windowRadius;
         const edgeFeather = 0.15;
         if (normDist > 1.0 - edgeFeather) {
           const t = (1.0 - normDist) / edgeFeather;
@@ -370,17 +389,23 @@ function evaluatePhotoMapping(
           u, v
         );
       }
-      frameDist = Math.abs(angle - windowRadius);
+      frameDist = Math.abs(angularDist - windowRadius);
       break;
     }
 
     case 'half_moon': {
-      const halfCoverage = coverageRad * 0.55;
-      u = 0.5 + (nx / (Math.sin(halfCoverage) * 2));
-      v = 0.5 - (ny / (Math.sin(halfCoverage) * 2));
+      // Crescent half moon: photo displayed across the illuminated front lobe
+      const spanLon = coverageRad * 0.75;
+      const spanLat = coverageRad * 0.70;
+      u = 0.5 + deltaPhi / spanLon;
+      v = 0.5 + deltaTheta / spanLat;
 
-      if (nz > -0.1 && angle < halfCoverage) {
-        weight = Math.max(0, Math.min(1, (1.0 - angle / halfCoverage) * 1.5));
+      const normX = (2 * deltaPhi) / spanLon;
+      const normY = (2 * deltaTheta) / spanLat;
+      const dist = Math.sqrt(normX * normX + normY * normY);
+
+      if (dist < 1.0 && nz > -0.05) {
+        weight = Math.cos(dist * Math.PI * 0.5) * Math.max(0.0, Math.min(1.0, (nz + 0.1) * 2.0));
         intensity = sampleGridIntensity(
           processedImage.intensityGrid,
           processedImage.width,
@@ -396,15 +421,18 @@ function evaluatePhotoMapping(
     case 'minimal_moon':
     case 'custom':
     default: {
-      const maxSpan = coverageRad * 0.6;
-      u = 0.5 + (nx / (Math.sin(maxSpan) * 2));
-      v = 0.5 - (ny / (Math.sin(maxSpan) * 2));
+      // Natural spherical panoramic wrap across the front hemisphere
+      const spanLon = coverageRad * 0.88;
+      const spanLat = coverageRad * 0.75;
+      u = 0.5 + deltaPhi / spanLon;
+      v = 0.5 + deltaTheta / spanLat;
 
-      if (angle < maxSpan) {
-        const normDist = angle / maxSpan;
-        weight = Math.cos(normDist * Math.PI * 0.5);
-        weight = Math.pow(weight, 1.2);
+      const normX = (2 * deltaPhi) / spanLon;
+      const normY = (2 * deltaTheta) / spanLat;
+      const dist = Math.sqrt(normX * normX + normY * normY);
 
+      if (dist < 1.0) {
+        weight = Math.pow(Math.cos(dist * Math.PI * 0.5), 1.2);
         intensity = sampleGridIntensity(
           processedImage.intensityGrid,
           processedImage.width,

@@ -52,6 +52,7 @@ export interface MoonDimensions {
   baseWallThickness: number; // 1.2 - 3.5 mm (default ~2.0 mm)
   lithoMinThickness: number; // 0.8 mm (brightest transmission)
   lithoMaxThickness: number; // 3.0 mm (darkest shadow)
+  exteriorReliefDepth: number; // 0.0 - 2.5 mm (profile depth in STL exterior)
   craterDensity: number; // 0 to 1.0
   craterSize: number; // 0.5 to 2.0
   surfaceRoughness: number; // 0 to 1.0
